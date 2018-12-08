@@ -212,9 +212,9 @@ def test(epoch):
         cur_model = model.module
     else:
         cur_model = model
-    num_classes = cur_model.num_classes
+    num_classes = int(cur_model.num_classes)
     anchors     = cur_model.anchors
-    num_anchors = cur_model.num_anchors
+    num_anchors = int(cur_model.num_anchors)
     total       = 0.0
     proposals   = 0.0
     correct     = 0.0

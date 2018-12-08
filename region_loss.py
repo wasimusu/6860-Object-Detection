@@ -1,6 +1,3 @@
-import time
-import torch
-import math
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
@@ -106,7 +103,7 @@ class RegionLoss(nn.Module):
         self.anchors = anchors
         self.num_anchors = int(num_anchors)
         self.anchor_step = int(len(anchors) // num_anchors)
-        print("Anchor Step type : ", type(self.anchor_step))
+        # print("Anchor Step type : ", type(self.anchor_step))
         self.coord_scale = 1
         self.noobject_scale = 1
         self.object_scale = 5
@@ -139,8 +136,8 @@ class RegionLoss(nn.Module):
         pred_boxes = torch.FloatTensor(4, nB * nA * nH * nW)
         grid_x = torch.linspace(0, nW - 1, nW).repeat(nH, 1).repeat(nB * nA, 1, 1).view(nB * nA * nH * nW)
         grid_y = torch.linspace(0, nH - 1, nH).repeat(nW, 1).t().repeat(nB * nA, 1, 1).view(nB * nA * nH * nW)
-        anchor_w = torch.Tensor(self.anchors).view(nA, self.anchor_step).index_select(1, torch.LongTensor([0]))
-        anchor_h = torch.Tensor(self.anchors).view(nA, self.anchor_step).index_select(1, torch.LongTensor([1]))
+        anchor_w = torch.Tensor(self.anchors).view(nA, int(self.anchor_step)).index_select(1, torch.LongTensor([0]))
+        anchor_h = torch.Tensor(self.anchors).view(nA, int(self.anchor_step)).index_select(1, torch.LongTensor([1]))
         anchor_w = anchor_w.repeat(nB, 1).repeat(1, 1, nH*nW).view(nB*nA*nH*nW)
         anchor_h = anchor_h.repeat(nB, 1).repeat(1, 1, nH*nW).view(nB*nA*nH*nW)
         pred_boxes[0] = x.data + grid_x
@@ -150,7 +147,7 @@ class RegionLoss(nn.Module):
         pred_boxes = convert2cpu(pred_boxes.transpose(0,1).contiguous().view(-1,4))
         t2 = time.time()
 
-        print("nA : ", nA, type(nA), "self.anchor_step : ", self.anchor_step, type(self.anchor_step))
+        # print("nA : ", nA, type(nA), "self.anchor_step : ", self.anchor_step, type(self.anchor_step))
         nGT, nCorrect, coord_mask, conf_mask, cls_mask, tx, ty, tw, th, tconf,tcls = build_targets(pred_boxes, target.data, self.anchors, nA, nC, \
                                                                nH, nW, self.noobject_scale, self.object_scale, self.thresh, self.seen)
         cls_mask = (cls_mask == 1)
