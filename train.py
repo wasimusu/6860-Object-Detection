@@ -97,8 +97,8 @@ if use_cuda:
     if ngpus > 1:
         model = torch.nn.DataParallel(model).cuda()
     else:
-        # model = model.cuda()
-        model = model.cpu()
+        model = model.cuda()
+        # model = model.cpu()
 
 params_dict = dict(model.named_parameters())
 params = []
@@ -144,7 +144,7 @@ def train(epoch):
         batch_size=batch_size, shuffle=False, **kwargs)
 
     lr = adjust_learning_rate(optimizer, processed_batches)
-    logging('epoch %d, processed %d samples, lr %f' % (epoch, epoch * len(train_loader.dataset), lr))
+    logging('epoch %d / %d processed %d samples, lr %f' % (epoch, max_epochs, epoch * len(train_loader.dataset), lr))
     model.train()
     t1 = time.time()
     avg_time = torch.zeros(9)
@@ -259,6 +259,7 @@ if evaluate:
     logging('evaluating ...')
     test(0)
 else:
+    max_epochs = 10
     for epoch in range(init_epoch, max_epochs): 
         train(epoch)
         test(epoch)

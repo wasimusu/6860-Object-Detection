@@ -3,6 +3,8 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 from utils import *
 
+use_cuda = False
+
 def build_targets(pred_boxes, target, anchors, num_anchors, num_classes, nH, nW, noobject_scale, object_scale, sil_thresh, seen):
     nB = target.size(0)
     nA = int(num_anchors)
@@ -123,19 +125,36 @@ class RegionLoss(nn.Module):
         nH = output.data.size(2)
         nW = output.data.size(3)
 
-        output   = output.view(nB, nA, (5+nC), nH, nW)
-        x = F.sigmoid(output.index_select(2, Variable(torch.LongTensor([0]))).view(nB, nA, nH, nW))
-        y = F.sigmoid(output.index_select(2, Variable(torch.LongTensor([1]))).view(nB, nA, nH, nW))
-        w = output.index_select(2, Variable(torch.LongTensor([2]))).view(nB, nA, nH, nW)
-        h = output.index_select(2, Variable(torch.LongTensor([3]))).view(nB, nA, nH, nW)
-        conf = F.sigmoid(output.index_select(2, Variable(torch.LongTensor([4]))).view(nB, nA, nH, nW))
-        cls = output.index_select(2, Variable(torch.linspace(5, 5 + nC - 1, nC).long()))
-        cls  = cls.view(nB*nA, nC, nH*nW).transpose(1,2).contiguous().view(nB*nA*nH*nW, nC)
-        t1 = time.time()
+	if use_cuda:
+	    output   = output.view(nB, nA, (5+nC), nH, nW)
+	    x    = F.sigmoid(output.index_select(2, Variable(torch.cuda.LongTensor([0]))).view(nB, nA, nH, nW))
+	    y    = F.sigmoid(output.index_select(2, Variable(torch.cuda.LongTensor([1]))).view(nB, nA, nH, nW))
+	    w    = output.index_select(2, Variable(torch.cuda.LongTensor([2]))).view(nB, nA, nH, nW)
+	    h    = output.index_select(2, Variable(torch.cuda.LongTensor([3]))).view(nB, nA, nH, nW)
+	    conf = F.sigmoid(output.index_select(2, Variable(torch.cuda.LongTensor([4]))).view(nB, nA, nH, nW))
+	    cls  = output.index_select(2, Variable(torch.linspace(5,5+nC-1,nC).long().cuda()))
+	    cls  = cls.view(nB*nA, nC, nH*nW).transpose(1,2).contiguous().view(nB*nA*nH*nW, nC)
+	    t1 = time.time()
+	else:
+	    output   = output.view(nB, nA, (5+nC), nH, nW)
+	    x = F.sigmoid(output.index_select(2, Variable(torch.LongTensor([0]))).view(nB, nA, nH, nW))
+	    y = F.sigmoid(output.index_select(2, Variable(torch.LongTensor([1]))).view(nB, nA, nH, nW))
+	    w = output.index_select(2, Variable(torch.LongTensor([2]))).view(nB, nA, nH, nW)
+	    h = output.index_select(2, Variable(torch.LongTensor([3]))).view(nB, nA, nH, nW)
+	    conf = F.sigmoid(output.index_select(2, Variable(torch.LongTensor([4]))).view(nB, nA, nH, nW))
+	    cls = output.index_select(2, Variable(torch.linspace(5, 5 + nC - 1, nC).long()))
+	    cls  = cls.view(nB*nA, nC, nH*nW).transpose(1,2).contiguous().view(nB*nA*nH*nW, nC)
+	    t1 = time.time()
 
-        pred_boxes = torch.FloatTensor(4, nB * nA * nH * nW)
-        grid_x = torch.linspace(0, nW - 1, nW).repeat(nH, 1).repeat(nB * nA, 1, 1).view(nB * nA * nH * nW)
-        grid_y = torch.linspace(0, nH - 1, nH).repeat(nW, 1).t().repeat(nB * nA, 1, 1).view(nB * nA * nH * nW)
+	if use_cuda:
+	    pred_boxes = torch.cuda.FloatTensor(4, nB*nA*nH*nW)
+	    grid_x = torch.linspace(0, nW-1, nW).repeat(nH,1).repeat(nB*nA, 1, 1).view(nB*nA*nH*nW).cuda()
+	    grid_y = torch.linspace(0, nH-1, nH).repeat(nW,1).t().repeat(nB*nA, 1, 1).view(nB*nA*nH*nW).cuda()
+        else:	  
+	    pred_boxes = torch.FloatTensor(4, nB * nA * nH * nW)
+	    grid_x = torch.linspace(0, nW - 1, nW).repeat(nH, 1).repeat(nB * nA, 1, 1).view(nB * nA * nH * nW)
+	    grid_y = torch.linspace(0, nH - 1, nH).repeat(nW, 1).t().repeat(nB * nA, 1, 1).view(nB * nA * nH * nW)
+        
         anchor_w = torch.Tensor(self.anchors).view(nA, int(self.anchor_step)).index_select(1, torch.LongTensor([0]))
         anchor_h = torch.Tensor(self.anchors).view(nA, int(self.anchor_step)).index_select(1, torch.LongTensor([1]))
         anchor_w = anchor_w.repeat(nB, 1).repeat(1, 1, nH*nW).view(nB*nA*nH*nW)
@@ -152,18 +171,32 @@ class RegionLoss(nn.Module):
                                                                nH, nW, self.noobject_scale, self.object_scale, self.thresh, self.seen)
         cls_mask = (cls_mask == 1)
         nProposals = int((conf > 0.25).sum().data[0])
+	
+	if use_cuda:
+	    tx    = Variable(tx.cuda())
+	    ty    = Variable(ty.cuda())
+	    tw    = Variable(tw.cuda())
+	    th    = Variable(th.cuda())
+	    tconf = Variable(tconf.cuda())
+	    tcls  = Variable(tcls.view(-1)[cls_mask].long().cuda())
 
-        tx = Variable(tx)
-        ty = Variable(ty)
-        tw = Variable(tw)
-        th = Variable(th)
-        tconf = Variable(tconf)
-        tcls = Variable(tcls.view(-1)[cls_mask].long())
+	    coord_mask = Variable(coord_mask.cuda())
+	    conf_mask  = Variable(conf_mask.cuda().sqrt())
+	    cls_mask   = Variable(cls_mask.view(-1, 1).repeat(1,nC).cuda())
+	    cls        = cls[cls_mask].view(-1, nC)  
+	
+	else:	  
+	    tx = Variable(tx)
+	    ty = Variable(ty)
+	    tw = Variable(tw)
+	    th = Variable(th)
+	    tconf = Variable(tconf)
+	    tcls = Variable(tcls.view(-1)[cls_mask].long())
 
-        coord_mask = Variable(coord_mask)
-        conf_mask = Variable(conf_mask.sqrt())
-        cls_mask = Variable(cls_mask.view(-1, 1).repeat(1, nC))
-        cls        = cls[cls_mask].view(-1, nC)  
+	    coord_mask = Variable(coord_mask)
+	    conf_mask = Variable(conf_mask.sqrt())
+	    cls_mask = Variable(cls_mask.view(-1, 1).repeat(1, nC))
+	    cls        = cls[cls_mask].view(-1, nC)  
 
         t3 = time.time()
 
@@ -172,6 +205,7 @@ class RegionLoss(nn.Module):
         loss_w = self.coord_scale * nn.MSELoss(size_average=False)(w*coord_mask, tw*coord_mask)/2.0
         loss_h = self.coord_scale * nn.MSELoss(size_average=False)(h*coord_mask, th*coord_mask)/2.0
         loss_conf = nn.MSELoss(size_average=False)(conf*conf_mask, tconf*conf_mask)/2.0
+        #print(cls.shape, tcls.shape)
         loss_cls = self.class_scale * nn.CrossEntropyLoss(size_average=False)(cls, tcls)
         loss = loss_x + loss_y + loss_w + loss_h + loss_conf + loss_cls
         t4 = time.time()
