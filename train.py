@@ -53,14 +53,14 @@ scales        = [float(scale) for scale in net_options['scales'].split(',')]
 max_epochs    = max_batches*batch_size//nsamples+1
 use_cuda      = False
 seed          = int(time.time())
-eps           = 1e-5
+eps = 1e-2
 save_interval = 10  # epoches
 dot_interval  = 70  # batches
 
 # Test parameters
-conf_thresh   = 0.25
+conf_thresh   = 0.0  # 0.25
 nms_thresh    = 0.4
-iou_thresh    = 0.5
+iou_thresh    = 0.01  # 0.5
 
 if not os.path.exists(backupdir):
     os.mkdir(backupdir)
@@ -87,10 +87,10 @@ init_epoch        = model.seen//nsamples
 kwargs = {'num_workers': num_workers, 'pin_memory': True} if use_cuda else {}
 test_loader = torch.utils.data.DataLoader(
     dataset.listDataset(testlist, shape=(init_width, init_height),
-                   shuffle=False,
-                   transform=transforms.Compose([
+                        shuffle=False,
+                        transform=transforms.Compose([
                        transforms.ToTensor(),
-                   ]), train=False),
+                        ]), train=True),
     batch_size=batch_size, shuffle=False, **kwargs)
 
 if use_cuda:
@@ -107,6 +107,7 @@ for key, value in params_dict.items():
         params += [{'params': [value], 'weight_decay': 0.0}]
     else:
         params += [{'params': [value], 'weight_decay': decay*batch_size}]
+
 optimizer = optim.SGD(model.parameters(), lr=learning_rate/batch_size, momentum=momentum, dampening=0, weight_decay=decay*batch_size)
 
 def adjust_learning_rate(optimizer, batch):
@@ -246,6 +247,9 @@ def test(epoch):
                     if iou > best_iou:
                         best_j = j
                         best_iou = iou
+                    # print("Best iou : ", best_iou, iou)
+                # print(best_iou, boxes[best_j][6], box_gt[6])
+                # print(best_iou, boxes[best_j], box_gt, box_gt.__len__())
                 if best_iou > iou_thresh and boxes[best_j][6] == box_gt[6]:
                     correct = correct+1
 
@@ -259,11 +263,11 @@ if evaluate:
     logging('evaluating ...')
     test(0)
 else:
-    max_epochs = 10
-    for epoch in range(init_epoch, max_epochs): 
+    # max_epochs = 20
+    for epoch in range(init_epoch, max_epochs):
         train(epoch)
         test(epoch)
-
+        pass
 
 if __name__ == "__main__":
     pass

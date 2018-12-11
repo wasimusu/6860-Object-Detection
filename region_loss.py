@@ -125,78 +125,86 @@ class RegionLoss(nn.Module):
         nH = output.data.size(2)
         nW = output.data.size(3)
 
-	if use_cuda:
-	    output   = output.view(nB, nA, (5+nC), nH, nW)
-	    x    = F.sigmoid(output.index_select(2, Variable(torch.cuda.LongTensor([0]))).view(nB, nA, nH, nW))
-	    y    = F.sigmoid(output.index_select(2, Variable(torch.cuda.LongTensor([1]))).view(nB, nA, nH, nW))
-	    w    = output.index_select(2, Variable(torch.cuda.LongTensor([2]))).view(nB, nA, nH, nW)
-	    h    = output.index_select(2, Variable(torch.cuda.LongTensor([3]))).view(nB, nA, nH, nW)
-	    conf = F.sigmoid(output.index_select(2, Variable(torch.cuda.LongTensor([4]))).view(nB, nA, nH, nW))
-	    cls  = output.index_select(2, Variable(torch.linspace(5,5+nC-1,nC).long().cuda()))
-	    cls  = cls.view(nB*nA, nC, nH*nW).transpose(1,2).contiguous().view(nB*nA*nH*nW, nC)
-	    t1 = time.time()
-	else:
-	    output   = output.view(nB, nA, (5+nC), nH, nW)
-	    x = F.sigmoid(output.index_select(2, Variable(torch.LongTensor([0]))).view(nB, nA, nH, nW))
-	    y = F.sigmoid(output.index_select(2, Variable(torch.LongTensor([1]))).view(nB, nA, nH, nW))
-	    w = output.index_select(2, Variable(torch.LongTensor([2]))).view(nB, nA, nH, nW)
-	    h = output.index_select(2, Variable(torch.LongTensor([3]))).view(nB, nA, nH, nW)
-	    conf = F.sigmoid(output.index_select(2, Variable(torch.LongTensor([4]))).view(nB, nA, nH, nW))
-	    cls = output.index_select(2, Variable(torch.linspace(5, 5 + nC - 1, nC).long()))
-	    cls  = cls.view(nB*nA, nC, nH*nW).transpose(1,2).contiguous().view(nB*nA*nH*nW, nC)
-	    t1 = time.time()
+        if use_cuda:
+            output = output.view(nB, nA, (5 + nC), nH, nW)
+            x = F.sigmoid(output.index_select(2, Variable(torch.cuda.LongTensor([0]))).view(nB, nA, nH, nW))
+            y = F.sigmoid(output.index_select(2, Variable(torch.cuda.LongTensor([1]))).view(nB, nA, nH, nW))
+            w = output.index_select(2, Variable(torch.cuda.LongTensor([2]))).view(nB, nA, nH, nW)
+            h = output.index_select(2, Variable(torch.cuda.LongTensor([3]))).view(nB, nA, nH, nW)
+            conf = F.sigmoid(output.index_select(2, Variable(torch.cuda.LongTensor([4]))).view(nB, nA, nH, nW))
+            cls = output.index_select(2, Variable(torch.linspace(5, 5 + nC - 1, nC).long().cuda()))
+            cls = cls.view(nB * nA, nC, nH * nW).transpose(1, 2).contiguous().view(nB * nA * nH * nW, nC)
+            t1 = time.time()
+        else:
+            output = output.view(nB, nA, (5 + nC), nH, nW)
+            x = F.sigmoid(output.index_select(2, Variable(torch.LongTensor([0]))).view(nB, nA, nH, nW))
+            y = F.sigmoid(output.index_select(2, Variable(torch.LongTensor([1]))).view(nB, nA, nH, nW))
+            w = output.index_select(2, Variable(torch.LongTensor([2]))).view(nB, nA, nH, nW)
+            h = output.index_select(2, Variable(torch.LongTensor([3]))).view(nB, nA, nH, nW)
+            conf = F.sigmoid(output.index_select(2, Variable(torch.LongTensor([4]))).view(nB, nA, nH, nW))
+            cls = output.index_select(2, Variable(torch.linspace(5, 5 + nC - 1, nC).long()))
+            cls = cls.view(nB * nA, nC, nH * nW).transpose(1, 2).contiguous().view(nB * nA * nH * nW, nC)
+            t1 = time.time()
 
-	if use_cuda:
-	    pred_boxes = torch.cuda.FloatTensor(4, nB*nA*nH*nW)
-	    grid_x = torch.linspace(0, nW-1, nW).repeat(nH,1).repeat(nB*nA, 1, 1).view(nB*nA*nH*nW).cuda()
-	    grid_y = torch.linspace(0, nH-1, nH).repeat(nW,1).t().repeat(nB*nA, 1, 1).view(nB*nA*nH*nW).cuda()
-        else:	  
-	    pred_boxes = torch.FloatTensor(4, nB * nA * nH * nW)
-	    grid_x = torch.linspace(0, nW - 1, nW).repeat(nH, 1).repeat(nB * nA, 1, 1).view(nB * nA * nH * nW)
-	    grid_y = torch.linspace(0, nH - 1, nH).repeat(nW, 1).t().repeat(nB * nA, 1, 1).view(nB * nA * nH * nW)
-        
-        anchor_w = torch.Tensor(self.anchors).view(nA, int(self.anchor_step)).index_select(1, torch.LongTensor([0]))
-        anchor_h = torch.Tensor(self.anchors).view(nA, int(self.anchor_step)).index_select(1, torch.LongTensor([1]))
-        anchor_w = anchor_w.repeat(nB, 1).repeat(1, 1, nH*nW).view(nB*nA*nH*nW)
-        anchor_h = anchor_h.repeat(nB, 1).repeat(1, 1, nH*nW).view(nB*nA*nH*nW)
-        pred_boxes[0] = x.data + grid_x
-        pred_boxes[1] = y.data + grid_y
-        pred_boxes[2] = torch.exp(w.data) * anchor_w
-        pred_boxes[3] = torch.exp(h.data) * anchor_h
-        pred_boxes = convert2cpu(pred_boxes.transpose(0,1).contiguous().view(-1,4))
-        t2 = time.time()
+        if use_cuda:
+            pred_boxes = torch.cuda.FloatTensor(4, nB * nA * nH * nW)
+            grid_x = torch.linspace(0, nW - 1, nW).repeat(nH, 1).repeat(nB * nA, 1, 1).view(nB * nA * nH * nW).cuda()
+            grid_y = torch.linspace(0, nH - 1, nH).repeat(nW, 1).t().repeat(nB * nA, 1, 1).view(
+                nB * nA * nH * nW).cuda()
+        else:
+            pred_boxes = torch.FloatTensor(4, nB * nA * nH * nW)
+            grid_x = torch.linspace(0, nW - 1, nW).repeat(nH, 1).repeat(nB * nA, 1, 1).view(nB * nA * nH * nW)
+            grid_y = torch.linspace(0, nH - 1, nH).repeat(nW, 1).t().repeat(nB * nA, 1, 1).view(nB * nA * nH * nW)
 
-        # print("nA : ", nA, type(nA), "self.anchor_step : ", self.anchor_step, type(self.anchor_step))
-        nGT, nCorrect, coord_mask, conf_mask, cls_mask, tx, ty, tw, th, tconf,tcls = build_targets(pred_boxes, target.data, self.anchors, nA, nC, \
-                                                               nH, nW, self.noobject_scale, self.object_scale, self.thresh, self.seen)
-        cls_mask = (cls_mask == 1)
-        nProposals = int((conf > 0.25).sum().data[0])
-	
-	if use_cuda:
-	    tx    = Variable(tx.cuda())
-	    ty    = Variable(ty.cuda())
-	    tw    = Variable(tw.cuda())
-	    th    = Variable(th.cuda())
-	    tconf = Variable(tconf.cuda())
-	    tcls  = Variable(tcls.view(-1)[cls_mask].long().cuda())
+            anchor_w = torch.Tensor(self.anchors).view(nA, int(self.anchor_step)).index_select(1, torch.LongTensor([0]))
+            anchor_h = torch.Tensor(self.anchors).view(nA, int(self.anchor_step)).index_select(1, torch.LongTensor([1]))
+            anchor_w = anchor_w.repeat(nB, 1).repeat(1, 1, nH * nW).view(nB * nA * nH * nW)
+            anchor_h = anchor_h.repeat(nB, 1).repeat(1, 1, nH * nW).view(nB * nA * nH * nW)
+            pred_boxes[0] = x.data + grid_x
+            pred_boxes[1] = y.data + grid_y
+            pred_boxes[2] = torch.exp(w.data) * anchor_w
+            pred_boxes[3] = torch.exp(h.data) * anchor_h
+            pred_boxes = convert2cpu(pred_boxes.transpose(0, 1).contiguous().view(-1, 4))
+            t2 = time.time()
 
-	    coord_mask = Variable(coord_mask.cuda())
-	    conf_mask  = Variable(conf_mask.cuda().sqrt())
-	    cls_mask   = Variable(cls_mask.view(-1, 1).repeat(1,nC).cuda())
-	    cls        = cls[cls_mask].view(-1, nC)  
-	
-	else:	  
-	    tx = Variable(tx)
-	    ty = Variable(ty)
-	    tw = Variable(tw)
-	    th = Variable(th)
-	    tconf = Variable(tconf)
-	    tcls = Variable(tcls.view(-1)[cls_mask].long())
+            # print("nA : ", nA, type(nA), "self.anchor_step : ", self.anchor_step, type(self.anchor_step))
+            nGT, nCorrect, coord_mask, conf_mask, cls_mask, tx, ty, tw, th, tconf, tcls = build_targets(pred_boxes,
+                                                                                                        target.data,
+                                                                                                        self.anchors,
+                                                                                                        nA, nC, \
+                                                                                                        nH, nW,
+                                                                                                        self.noobject_scale,
+                                                                                                        self.object_scale,
+                                                                                                        self.thresh,
+                                                                                                        self.seen)
+            cls_mask = (cls_mask == 1)
+            nProposals = int((conf > 0.25).sum().data[0])
 
-	    coord_mask = Variable(coord_mask)
-	    conf_mask = Variable(conf_mask.sqrt())
-	    cls_mask = Variable(cls_mask.view(-1, 1).repeat(1, nC))
-	    cls        = cls[cls_mask].view(-1, nC)  
+        if use_cuda:
+            tx = Variable(tx.cuda())
+            ty = Variable(ty.cuda())
+            tw = Variable(tw.cuda())
+            th = Variable(th.cuda())
+            tconf = Variable(tconf.cuda())
+            tcls = Variable(tcls.view(-1)[cls_mask].long().cuda())
+
+            coord_mask = Variable(coord_mask.cuda())
+            conf_mask = Variable(conf_mask.cuda().sqrt())
+            cls_mask = Variable(cls_mask.view(-1, 1).repeat(1, nC).cuda())
+            cls = cls[cls_mask].view(-1, nC)
+
+        else:
+            tx = Variable(tx)
+            ty = Variable(ty)
+            tw = Variable(tw)
+            th = Variable(th)
+            tconf = Variable(tconf)
+            tcls = Variable(tcls.view(-1)[cls_mask].long())
+
+            coord_mask = Variable(coord_mask)
+            conf_mask = Variable(conf_mask.sqrt())
+            cls_mask = Variable(cls_mask.view(-1, 1).repeat(1, nC))
+            cls = cls[cls_mask].view(-1, nC)
 
         t3 = time.time()
 

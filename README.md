@@ -1,3 +1,13 @@
+#### System Requirements
+- RAM : 32GB for tiny-yolo architecture
+- Execution time : 5 hours at 8 frame per second
+
+#### Package Requirements
+- OpenCV
+- Pytorch 0.3.1
+- torchvision
+- PIL
+
 ### pytorch-yolo2
 Convert https://pjreddie.com/darknet/yolo/ into pytorch. This repository is trying to achieve the following goals.
 - [x] implement RegionLoss, MaxPoolStride1, Reorg, GolbalAvgPool2d
@@ -90,7 +100,6 @@ mAP test on released models
 yolo-voc.weights 544 0.7682 (paper: 78.6)
 yolo-voc.weights 416 0.7513 (paper: 76.8)
 tiny-yolo-voc.weights 416 0.5410 (paper: 57.1)
-
 ```
 ---
 #### Focal Loss 
