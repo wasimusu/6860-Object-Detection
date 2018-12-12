@@ -7,9 +7,9 @@ use_cuda = False
 
 def build_targets(pred_boxes, target, anchors, num_anchors, num_classes, nH, nW, noobject_scale, object_scale, sil_thresh, seen):
     nB = target.size(0)
-    nA = int(num_anchors)
+    nA = int(num_anchors)                           # Change this to cast to int
     nC = num_classes
-    anchor_step = len(anchors)//num_anchors
+    anchor_step = len(anchors)//num_anchors         # Changed this to return int
     conf_mask  = torch.ones(nB, nA, nH, nW) * noobject_scale
     coord_mask = torch.zeros(nB, nA, nH, nW)
     cls_mask   = torch.zeros(nB, nA, nH, nW)
@@ -114,9 +114,13 @@ class RegionLoss(nn.Module):
         self.seen = 0
 
     def forward(self, output, target):
+        """
         #output : BxAs*(4+1+num_classes)*H*W
+        :param output: contains bounding boxes, confidence for each bounding box being an object and classification score for each box as well
+        :param target: contains ground truths
+        :return: Nothing
+        """
         self.anchor_step = int(self.anchor_step)
-
 
         t0 = time.time()
         nB = output.data.size(0)
@@ -125,32 +129,36 @@ class RegionLoss(nn.Module):
         nH = output.data.size(2)
         nW = output.data.size(3)
 
+        # Making the code both on CPU and GPU
         if use_cuda:
-            output = output.view(nB, nA, (5 + nC), nH, nW)
-            x = F.sigmoid(output.index_select(2, Variable(torch.cuda.LongTensor([0]))).view(nB, nA, nH, nW))
-            y = F.sigmoid(output.index_select(2, Variable(torch.cuda.LongTensor([1]))).view(nB, nA, nH, nW))
-            w = output.index_select(2, Variable(torch.cuda.LongTensor([2]))).view(nB, nA, nH, nW)
-            h = output.index_select(2, Variable(torch.cuda.LongTensor([3]))).view(nB, nA, nH, nW)
-            conf = F.sigmoid(output.index_select(2, Variable(torch.cuda.LongTensor([4]))).view(nB, nA, nH, nW))
-            cls = output.index_select(2, Variable(torch.linspace(5, 5 + nC - 1, nC).long().cuda()))
-            cls = cls.view(nB * nA, nC, nH * nW).transpose(1, 2).contiguous().view(nB * nA * nH * nW, nC)
+            output = output.view(nB, nA, (5 + nC), nH, nW)     # Just reshaping it
+            x = F.sigmoid(output.index_select(2, Variable(torch.cuda.LongTensor([0]))).view(nB, nA, nH, nW))    # tx
+            y = F.sigmoid(output.index_select(2, Variable(torch.cuda.LongTensor([1]))).view(nB, nA, nH, nW))    # ty
+            w = output.index_select(2, Variable(torch.cuda.LongTensor([2]))).view(nB, nA, nH, nW)               # tw
+            h = output.index_select(2, Variable(torch.cuda.LongTensor([3]))).view(nB, nA, nH, nW)               # th
+            conf = F.sigmoid(output.index_select(2, Variable(torch.cuda.LongTensor([4]))).view(nB, nA, nH, nW)) # confidence of bounding box being an object
+            cls = output.index_select(2, Variable(torch.linspace(5, 5 + nC - 1, nC).long().cuda()))             # class score for each bounding box
+            cls = cls.view(nB * nA, nC, nH * nW).transpose(1, 2).contiguous().view(nB * nA * nH * nW, nC)       # Reshape / resize
             t1 = time.time()
         else:
             output = output.view(nB, nA, (5 + nC), nH, nW)
-            x = F.sigmoid(output.index_select(2, Variable(torch.LongTensor([0]))).view(nB, nA, nH, nW))
-            y = F.sigmoid(output.index_select(2, Variable(torch.LongTensor([1]))).view(nB, nA, nH, nW))
-            w = output.index_select(2, Variable(torch.LongTensor([2]))).view(nB, nA, nH, nW)
-            h = output.index_select(2, Variable(torch.LongTensor([3]))).view(nB, nA, nH, nW)
-            conf = F.sigmoid(output.index_select(2, Variable(torch.LongTensor([4]))).view(nB, nA, nH, nW))
-            cls = output.index_select(2, Variable(torch.linspace(5, 5 + nC - 1, nC).long()))
-            cls = cls.view(nB * nA, nC, nH * nW).transpose(1, 2).contiguous().view(nB * nA * nH * nW, nC)
+            x = F.sigmoid(output.index_select(2, Variable(torch.LongTensor([0]))).view(nB, nA, nH, nW))     # tx
+            y = F.sigmoid(output.index_select(2, Variable(torch.LongTensor([1]))).view(nB, nA, nH, nW))     # ty
+            w = output.index_select(2, Variable(torch.LongTensor([2]))).view(nB, nA, nH, nW)                # tw
+            h = output.index_select(2, Variable(torch.LongTensor([3]))).view(nB, nA, nH, nW)                # th
+            conf = F.sigmoid(output.index_select(2, Variable(torch.LongTensor([4]))).view(nB, nA, nH, nW))  # confidence of bounding box being an object
+            cls = output.index_select(2, Variable(torch.linspace(5, 5 + nC - 1, nC).long()))                # class score for each bounding box
+            cls = cls.view(nB * nA, nC, nH * nW).transpose(1, 2).contiguous().view(nB * nA * nH * nW, nC)   # Reshape / resize
             t1 = time.time()
 
+        # Making the code both on CPU and GPU
+        # grid_x, grid_y are offsets cx, cy
         if use_cuda:
             pred_boxes = torch.cuda.FloatTensor(4, nB * nA * nH * nW)
             grid_x = torch.linspace(0, nW - 1, nW).repeat(nH, 1).repeat(nB * nA, 1, 1).view(nB * nA * nH * nW).cuda()
             grid_y = torch.linspace(0, nH - 1, nH).repeat(nW, 1).t().repeat(nB * nA, 1, 1).view(
                 nB * nA * nH * nW).cuda()
+
         else:
             pred_boxes = torch.FloatTensor(4, nB * nA * nH * nW)
             grid_x = torch.linspace(0, nW - 1, nW).repeat(nH, 1).repeat(nB * nA, 1, 1).view(nB * nA * nH * nW)
@@ -158,62 +166,69 @@ class RegionLoss(nn.Module):
 
             anchor_w = torch.Tensor(self.anchors).view(nA, int(self.anchor_step)).index_select(1, torch.LongTensor([0]))
             anchor_h = torch.Tensor(self.anchors).view(nA, int(self.anchor_step)).index_select(1, torch.LongTensor([1]))
-            anchor_w = anchor_w.repeat(nB, 1).repeat(1, 1, nH * nW).view(nB * nA * nH * nW)
-            anchor_h = anchor_h.repeat(nB, 1).repeat(1, 1, nH * nW).view(nB * nA * nH * nW)
-            pred_boxes[0] = x.data + grid_x
-            pred_boxes[1] = y.data + grid_y
-            pred_boxes[2] = torch.exp(w.data) * anchor_w
-            pred_boxes[3] = torch.exp(h.data) * anchor_h
-            pred_boxes = convert2cpu(pred_boxes.transpose(0, 1).contiguous().view(-1, 4))
+            anchor_w = anchor_w.repeat(nB, 1).repeat(1, 1, nH * nW).view(nB * nA * nH * nW)     # pw
+            anchor_h = anchor_h.repeat(nB, 1).repeat(1, 1, nH * nW).view(nB * nA * nH * nW)     # ph
+            pred_boxes[0] = x.data + grid_x                 # bx
+            pred_boxes[1] = y.data + grid_y                 # by
+            pred_boxes[2] = torch.exp(w.data) * anchor_w    # bw
+            pred_boxes[3] = torch.exp(h.data) * anchor_h    # bh
+            pred_boxes = convert2cpu(pred_boxes.transpose(0, 1).contiguous().view(-1, 4))       # Keep all the boxes together
             t2 = time.time()
 
-            # print("nA : ", nA, type(nA), "self.anchor_step : ", self.anchor_step, type(self.anchor_step))
             nGT, nCorrect, coord_mask, conf_mask, cls_mask, tx, ty, tw, th, tconf, tcls = build_targets(pred_boxes,
                                                                                                         target.data,
                                                                                                         self.anchors,
                                                                                                         nA, nC, \
                                                                                                         nH, nW,
                                                                                                         self.noobject_scale,
-                                                                                                        self.object_scale,
-                                                                                                        self.thresh,
+                                                                                                        self.object_scale,                                                                                                        self.thresh,
                                                                                                         self.seen)
             cls_mask = (cls_mask == 1)
-            nProposals = int((conf > 0.25).sum().data[0])
+            nProposals = int((conf > 0.25).sum().data[0])       # No of proposals with confidence greater than 0.25
 
+        # Making the code both on CPU and GPU
         if use_cuda:
+            # Variable wraps a tensor and records the operations applied to it like automatic gradient calculation, etc
             tx = Variable(tx.cuda())
             ty = Variable(ty.cuda())
             tw = Variable(tw.cuda())
             th = Variable(th.cuda())
             tconf = Variable(tconf.cuda())
-            tcls = Variable(tcls.view(-1)[cls_mask].long().cuda())
 
             coord_mask = Variable(coord_mask.cuda())
             conf_mask = Variable(conf_mask.cuda().sqrt())
-            cls_mask = Variable(cls_mask.view(-1, 1).repeat(1, nC).cuda())
-            cls = cls[cls_mask].view(-1, nC)
 
         else:
+            # Variable wraps a tensor and records the operations applied to it like automatic gradient calculation, etc
             tx = Variable(tx)
             ty = Variable(ty)
             tw = Variable(tw)
             th = Variable(th)
             tconf = Variable(tconf)
-            tcls = Variable(tcls.view(-1)[cls_mask].long())
 
             coord_mask = Variable(coord_mask)
             conf_mask = Variable(conf_mask.sqrt())
             cls_mask = Variable(cls_mask.view(-1, 1).repeat(1, nC))
-            cls = cls[cls_mask].view(-1, nC)
+
+        tcls = Variable(tcls.view(-1)[cls_mask].long())
+        cls = cls[cls_mask].view(-1, nC)        # Actual class prediction output
 
         t3 = time.time()
 
-        loss_x = self.coord_scale * nn.MSELoss(size_average=False)(x*coord_mask, tx*coord_mask)/2.0
-        loss_y = self.coord_scale * nn.MSELoss(size_average=False)(y*coord_mask, ty*coord_mask)/2.0
-        loss_w = self.coord_scale * nn.MSELoss(size_average=False)(w*coord_mask, tw*coord_mask)/2.0
-        loss_h = self.coord_scale * nn.MSELoss(size_average=False)(h*coord_mask, th*coord_mask)/2.0
+        # # Mean Square Error used for the bounding box
+        # loss_x = self.coord_scale * nn.MSELoss(size_average=False)(x*coord_mask, tx*coord_mask)/2.0
+        # loss_y = self.coord_scale * nn.MSELoss(size_average=False)(y*coord_mask, ty*coord_mask)/2.0
+        # loss_w = self.coord_scale * nn.MSELoss(size_average=False)(w*coord_mask, tw*coord_mask)/2.0
+        # loss_h = self.coord_scale * nn.MSELoss(size_average=False)(h*coord_mask, th*coord_mask)/2.0
+        # loss_conf = nn.MSELoss(size_average=False)(conf*conf_mask, tconf*conf_mask)/2.0
+
+        # Changed that to smooth l1 loss as used by Faster R-CNN and SDD. Is impacted less by outliers
+        loss_x = self.coord_scale * nn.SmoothL1Loss(size_average=False)(x*coord_mask, tx*coord_mask)/2.0
+        loss_y = self.coord_scale * nn.SmoothL1Loss(size_average=False)(y*coord_mask, ty*coord_mask)/2.0
+        loss_w = self.coord_scale * nn.SmoothL1Loss(size_average=False)(w*coord_mask, tw*coord_mask)/2.0
+        loss_h = self.coord_scale * nn.SmoothL1Loss(size_average=False)(h*coord_mask, th*coord_mask)/2.0
         loss_conf = nn.MSELoss(size_average=False)(conf*conf_mask, tconf*conf_mask)/2.0
-        #print(cls.shape, tcls.shape)
+
         loss_cls = self.class_scale * nn.CrossEntropyLoss(size_average=False)(cls, tcls)
         loss = loss_x + loss_y + loss_w + loss_h + loss_conf + loss_cls
         t4 = time.time()

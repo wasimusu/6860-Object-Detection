@@ -6,12 +6,13 @@ from region_loss import RegionLoss
 from cfg import *
 #from layers.batchnorm.bn import BN2d
 
+# Max pool of size 2 and stride 1
 class MaxPoolStride1(nn.Module):
     def __init__(self):
         super(MaxPoolStride1, self).__init__()
 
     def forward(self, x):
-        x = F.max_pool2d(F.pad(x, (0,1,0,1), mode='replicate'), 2, stride=1)
+        x = F.max_pool2d(F.pad(x, (0, 1, 0, 1), mode='replicate'), 2, stride=1)
         return x
 
 class Reorg(nn.Module):
@@ -35,11 +36,14 @@ class Reorg(nn.Module):
         x = x.view(B, hs*ws*C, H/hs, W/ws)
         return x
 
+
+# Global average pooling 2D
 class GlobalAvgPool2d(nn.Module):
     def __init__(self):
         super(GlobalAvgPool2d, self).__init__()
 
     def forward(self, x):
+        # Forward propagate along H, W and resize data to N*C
         N = x.data.size(0)
         C = x.data.size(1)
         H = x.data.size(2)
@@ -49,6 +53,7 @@ class GlobalAvgPool2d(nn.Module):
         return x
 
 # for route and shortcut
+# For residual layers
 class EmptyModule(nn.Module):
     def __init__(self):
         super(EmptyModule, self).__init__()
@@ -77,6 +82,11 @@ class Darknet(nn.Module):
         self.seen = 0
 
     def forward(self, x):
+        """
+        Define the forward propagation.
+        Input : x which passes through all the convolution, pooling, fc, activations, batch normalization, etc
+        Output : x
+        """
         ind = -2
         self.loss = None
         outputs = dict()
@@ -115,6 +125,7 @@ class Darknet(nn.Module):
                 outputs[ind] = x
             elif block['type'] == 'region':
                 continue
+                # Nothing below continue is executed. It's strange they are here
                 if self.loss:
                     self.loss = self.loss + self.models[ind](x)
                 else:
@@ -127,9 +138,14 @@ class Darknet(nn.Module):
         return x
 
     def print_network(self):
+        """ Print the network """
         print_cfg(self.blocks)
 
     def create_network(self, blocks):
+        """
+        :param blocks: list of dictionary containing parameters for the convolutional network architecture
+        :return: nn.ModuleList() which contains the architecture
+        """
         models = nn.ModuleList()
 
         prev_filters = 3
@@ -146,8 +162,8 @@ class Darknet(nn.Module):
                 kernel_size = int(block['size'])
                 stride = int(block['stride'])
                 is_pad = int(block['pad'])
-                # pad = (kernel_size-1)/2 if is_pad else 0
-                pad = (kernel_size-1)//2 if is_pad else 0
+                # pad = (kernel_size-1)/2 if is_pad else 0  # This may return float value which is invalid for padding
+                pad = (kernel_size - 1) // 2 if is_pad else 0  # This does not return float values
 
                 activation = block['activation']
                 model = nn.Sequential()
@@ -245,15 +261,19 @@ class Darknet(nn.Module):
         return models
 
     def load_weights(self, weightfile):
+        """
+        Loads weight from file.
+        """
         fp = open(weightfile, 'rb')
-        header = np.fromfile(fp, count=4, dtype=np.int32)
-        self.header = torch.from_numpy(header)
+        header = np.fromfile(fp, count=4, dtype=np.int32)  # Read header
+        self.header = torch.from_numpy(header)  # Convert to pytorch
         self.seen = self.header[3]
-        buf = np.fromfile(fp, dtype = np.float32)
+        buf = np.fromfile(fp, dtype=np.float32)  # Read weights using numpy
         fp.close()
 
         start = 0
         ind = -2
+        # Load the weights for each of the weights one by one convolution layer
         for block in self.blocks:
             if start >= buf.size:
                 break
@@ -273,6 +293,8 @@ class Darknet(nn.Module):
                     start = load_fc(buf, start, model[0])
                 else:
                     start = load_fc(buf, start, model)
+
+            # These do not have weights
             elif block['type'] == 'maxpool':
                 pass
             elif block['type'] == 'reorg':
@@ -293,15 +315,17 @@ class Darknet(nn.Module):
                 print('unknown type %s' % (block['type']))
 
     def save_weights(self, outfile, cutoff=0):
+        """ Save weights of convolutional layer ony by one """
         if cutoff <= 0:
             cutoff = len(self.blocks)-1
 
-        fp = open(outfile, 'wb')
-        self.header[3] = self.seen
+        fp = open(outfile, 'wb')  # Output file
+        self.header[3] = self.seen  # header
         header = self.header
-        header.numpy().tofile(fp)
+        header.numpy().tofile(fp)  # Convert header form pytorch tensor to numpy before writing to file
 
         ind = -1
+        # For all the blocks, save their weights depending on their type
         for blockId in range(1, cutoff+1):
             ind = ind + 1
             block = self.blocks[blockId]
@@ -318,6 +342,8 @@ class Darknet(nn.Module):
                     save_fc(fc, model)
                 else:
                     save_fc(fc, model[0])
+
+            # These do not have weights to save
             elif block['type'] == 'maxpool':
                 pass
             elif block['type'] == 'reorg':

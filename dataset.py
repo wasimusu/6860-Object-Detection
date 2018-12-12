@@ -11,7 +11,7 @@ from utils import read_truths_args, read_truths
 from image import *
 
 class listDataset(Dataset):
-
+    """ A lot of preprocessing to the data is done here """
     def __init__(self, root, shape=None, shuffle=True, transform=None, target_transform=None, train=False, seen=0, batch_size=64, num_workers=4):
        with open(root, 'r') as file:
            self.lines = file.readlines()
@@ -29,6 +29,7 @@ class listDataset(Dataset):
        self.num_workers = num_workers
 
     def __len__(self):
+        """ Number of images in the (whole) sample """
         return self.nSamples
 
     def __getitem__(self, index):
