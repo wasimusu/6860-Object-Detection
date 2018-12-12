@@ -3,7 +3,9 @@ from utils import convert2cpu
 
 def parse_cfg(cfgfile):
     """
-    Parses configuration files and outputs lists of dictionary """
+    Parses configuration files
+    returns lists of dictionary
+    """
     blocks = []
     fp = open(cfgfile, 'r')
     block =  None
@@ -52,7 +54,7 @@ def print_cfg(blocks):
             prev_width = int(block['width'])
             prev_height = int(block['height'])
             continue
-        elif block['type'] == 'convolutional':
+        elif block['type'] == 'convolutional':  # Parse the parameters of convolution layer
             filters = int(block['filters'])
             kernel_size = int(block['size'])
             stride = int(block['stride'])
@@ -156,8 +158,9 @@ def print_cfg(blocks):
 
 def load_conv(buf, start, conv_model):
     """ Load convolutional model """
-    num_w = conv_model.weight.numel()
-    num_b = conv_model.bias.numel()
+    num_w = conv_model.weight.numel()       # Number of weight elements
+    num_b = conv_model.bias.numel()         # Number of biases
+
     conv_model.bias.data.copy_(torch.from_numpy(buf[start:start+num_b]));   start = start + num_b
     conv_model.weight.data.copy_(torch.from_numpy(buf[start:start+num_w])); start = start + num_w
     return start
@@ -173,8 +176,8 @@ def save_conv(fp, conv_model):
 
 def load_conv_bn(buf, start, conv_model, bn_model):
     """ Load batch normalized convolutional model """
-    num_w = conv_model.weight.numel()
-    num_b = bn_model.bias.numel()
+    num_w = conv_model.weight.numel()   # Number of weights
+    num_b = bn_model.bias.numel()       # Number of bias
     bn_model.bias.data.copy_(torch.from_numpy(buf[start:start+num_b]));     start = start + num_b
     bn_model.weight.data.copy_(torch.from_numpy(buf[start:start+num_b]));   start = start + num_b
     bn_model.running_mean.copy_(torch.from_numpy(buf[start:start+num_b]));  start = start + num_b

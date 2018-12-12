@@ -19,12 +19,12 @@ class listDataset(Dataset):
        if shuffle:
            random.shuffle(self.lines)
 
-       self.nSamples  = len(self.lines)
-       self.transform = transform
-       self.target_transform = target_transform
-       self.train = train
-       self.shape = shape
-       self.seen = seen
+       self.nSamples  = len(self.lines)             # Number of samples
+       self.transform = transform                   # Transformation for input
+       self.target_transform = target_transform     # Transformation for target
+       self.train = train       # Train or not
+       self.shape = shape       # Shape of image
+       self.seen = seen         # How many images have I seen during training
        self.batch_size = batch_size
        self.num_workers = num_workers
 
@@ -36,6 +36,7 @@ class listDataset(Dataset):
         assert index <= len(self), 'index range error'
         imgpath = self.lines[index].rstrip()
 
+        # Depending upon how many images and batches it has seen resize images
         if self.train and index % 64== 0:
             if self.seen < 4000*64:
                width = 13*32
@@ -54,20 +55,25 @@ class listDataset(Dataset):
                self.shape = (width, width)
 
         if self.train:
+            # Distort images for augmentation only during training
+            # Image distortion parameters
             jitter = 0.2
             hue = 0.1
             saturation = 1.5 
             exposure = 1.5
 
+            # read images and distort them and return distorted input and target values
             img, label = load_data_detection(imgpath, self.shape, jitter, hue, saturation, exposure)
-            label = torch.from_numpy(label)
+            label = torch.from_numpy(label)     # convert numpy labels to torch tensor labels
         else:
+            # Read image, convert to RGB and possibly resize
             img = Image.open(imgpath).convert('RGB')
             if self.shape:
                 img = img.resize(self.shape)
-    
+
+            # Build path replacing strings
             labpath = imgpath.replace('images', 'labels').replace('JPEGImages', 'labels').replace('.jpg', '.txt').replace('.png','.txt')
-            label = torch.zeros(50*5)
+            label = torch.zeros(50*5)       # Empty labels
             #if os.path.getsize(labpath):
             #tmp = torch.from_numpy(np.loadtxt(labpath))
             try:
@@ -76,13 +82,14 @@ class listDataset(Dataset):
                 tmp = torch.zeros(1,5)
             #tmp = torch.from_numpy(read_truths(labpath))
             tmp = tmp.view(-1)
-            tsz = tmp.numel()
+            tsz = tmp.numel()   # returns the number of elements in the temporary field
             #print('labpath = %s , tsz = %d' % (labpath, tsz))
             if tsz > 50*5:
                 label = tmp[0:50*5]
             elif tsz > 0:
                 label[0:tsz] = tmp
 
+        # Possibly do some transformations
         if self.transform is not None:
             img = self.transform(img)
 

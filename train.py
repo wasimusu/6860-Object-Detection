@@ -26,13 +26,14 @@ from models.tiny_yolo import TinyYoloNet
 
 
 # Training settings
-datacfg       = sys.argv[1]
-cfgfile       = sys.argv[2]
-weightfile    = sys.argv[3]
+datacfg       = sys.argv[1]         # Data configuration
+cfgfile       = sys.argv[2]         # Architecture Configuration
+weightfile    = sys.argv[3]         # Pretrained weight file
 
 data_options  = read_data_cfg(datacfg)
 net_options   = parse_cfg(cfgfile)[0]
 
+# Parse data file and network file
 trainlist     = data_options['train']
 testlist      = data_options['valid']
 backupdir     = data_options['backup']
@@ -62,34 +63,37 @@ conf_thresh   = 0.0  # 0.25
 nms_thresh    = 0.4
 iou_thresh    = 0.01  # 0.5
 
+# Save training checkpoint in backupdir.
+# Create backupdir if it does not exist
 if not os.path.exists(backupdir):
     os.mkdir(backupdir)
     
-###############
+#Fix random number generation
 torch.manual_seed(seed)
 if use_cuda:
     os.environ['CUDA_VISIBLE_DEVICES'] = gpus
     torch.cuda.manual_seed(seed)
 
-model       = Darknet(cfgfile)
-region_loss = model.loss
+model       = Darknet(cfgfile)  # make model out of cfgfile
+region_loss = model.loss        # loss
 
-model.load_weights(weightfile)
-model.print_network()
+model.load_weights(weightfile)  # load weights
+model.print_network()           # print network
 
-region_loss.seen  = model.seen
-processed_batches = model.seen//batch_size
+region_loss.seen  = model.seen  # Seen images during training
+processed_batches = model.seen//batch_size  # Number of processed batches
 
-init_width        = model.width
+init_width        = model.width     # Initial image dimension
 init_height       = model.height
-init_epoch        = model.seen//nsamples
+init_epoch        = model.seen//nsamples    # How many epochs did we already train
 
 kwargs = {'num_workers': num_workers, 'pin_memory': True} if use_cuda else {}
+# Get the iterable test dataset containing input and targets
 test_loader = torch.utils.data.DataLoader(
     dataset.listDataset(testlist, shape=(init_width, init_height),
                         shuffle=False,
                         transform=transforms.Compose([
-                       transforms.ToTensor(),
+                       transforms.ToTensor(),               # These transformations are executed to every sample
                         ]), train=True),
     batch_size=batch_size, shuffle=False, **kwargs)
 
@@ -97,24 +101,30 @@ if use_cuda:
     if ngpus > 1:
         model = torch.nn.DataParallel(model).cuda()
     else:
-        model = model.cuda()
-        # model = model.cpu()
+        # model = model.cuda()  # Original
+        model = model.cpu()
 
-params_dict = dict(model.named_parameters())
+params_dict = dict(model.named_parameters())        # All the parameters in the model
 params = []
+# Changing the hyper-parameters of parameters
 for key, value in params_dict.items():
     if key.find('.bn') >= 0 or key.find('.bias') >= 0:
         params += [{'params': [value], 'weight_decay': 0.0}]
     else:
         params += [{'params': [value], 'weight_decay': decay*batch_size}]
 
-optimizer = optim.SGD(model.parameters(), lr=learning_rate/batch_size, momentum=momentum, dampening=0, weight_decay=decay*batch_size)
+# Stochastic Gradient Descent
+# optimizer = optim.SGD(model.parameters(), lr=learning_rate/batch_size, momentum=momentum, dampening=0, weight_decay=decay*batch_size)
+
+# RMSProp
+optimizer = optim.RMSprop(model.parameters(), lr=learning_rate/batch_size, momentum=momentum, weight_decay=decay*batch_size)
 
 def adjust_learning_rate(optimizer, batch):
     """Sets the learning rate to the initial LR decayed by 10 every 30 epochs"""
     lr = learning_rate
     for i in range(len(steps)):
         scale = scales[i] if i < len(scales) else 1
+        # Adjust learning rate according to number of batches trained
         if batch >= steps[i]:
             lr = lr * scale
             if batch == steps[i]:
@@ -126,12 +136,15 @@ def adjust_learning_rate(optimizer, batch):
     return lr
 
 def train(epoch):
+    """ The training module """
     global processed_batches
     t0 = time.time()
     if ngpus > 1:
         cur_model = model.module
     else:
         cur_model = model
+    # load training dataset in the iterator train_loader
+    # The transformations are carried out per images
     train_loader = torch.utils.data.DataLoader(
         dataset.listDataset(trainlist, shape=(init_width, init_height),
                        shuffle=True,
@@ -144,11 +157,12 @@ def train(epoch):
                        num_workers=num_workers),
         batch_size=batch_size, shuffle=False, **kwargs)
 
-    lr = adjust_learning_rate(optimizer, processed_batches)
+    lr = adjust_learning_rate(optimizer, processed_batches)     # Adjust learning rate
+
     logging('epoch %d / %d processed %d samples, lr %f' % (epoch, max_epochs, epoch * len(train_loader.dataset), lr))
     model.train()
     t1 = time.time()
-    avg_time = torch.zeros(9)
+    avg_time = torch.zeros(9)       # Timing
     for batch_idx, (data, target) in enumerate(train_loader):
         t2 = time.time()
         adjust_learning_rate(optimizer, processed_batches)
@@ -156,22 +170,25 @@ def train(epoch):
         #if (batch_idx+1) % dot_interval == 0:
         #    sys.stdout.write('.')
 
+        # Optionally change the data for gpu
         if use_cuda:
             data = data.cuda()
             #target= target.cuda()
         t3 = time.time()
+
+        # Make the changes on data and target trackable
         data, target = Variable(data), Variable(target)
         t4 = time.time()
-        optimizer.zero_grad()
+        optimizer.zero_grad()       # set all the gradients of the model to zero | remove previous values
         t5 = time.time()
         output = model(data)
         t6 = time.time()
         region_loss.seen = region_loss.seen + data.data.size(0)
-        loss = region_loss(output, target)
+        loss = region_loss(output, target)  # Compute loss : classification, localization, confidence
         t7 = time.time()
-        loss.backward()
+        loss.backward()         # Back-propagate
         t8 = time.time()
-        optimizer.step()
+        optimizer.step()        # Update the weights of all the parameters
         t9 = time.time()
         if False and batch_idx > 1:
             avg_time[0] = avg_time[0] + (t2-t1)
@@ -213,6 +230,8 @@ def test(epoch):
         cur_model = model.module
     else:
         cur_model = model
+
+    # Training parameters
     num_classes = int(cur_model.num_classes)
     anchors     = cur_model.anchors
     num_anchors = int(cur_model.num_anchors)
@@ -224,35 +243,36 @@ def test(epoch):
         if use_cuda:
             data = data.cuda()
         data = Variable(data, volatile=True)
-        output = model(data).data
-        all_boxes = get_region_boxes(output, conf_thresh, num_classes, anchors, num_anchors)
+        output = model(data).data       # Output of the model
+        all_boxes = get_region_boxes(output, conf_thresh, num_classes, anchors, num_anchors)    # Compute all bounding boxes
+        # Find the best boxes
         for i in range(output.size(0)):
             boxes = all_boxes[i]
-            boxes = nms(boxes, nms_thresh)
+            boxes = nms(boxes, nms_thresh)      # Non-maximum suppression
             truths = target[i].view(-1, 5)
             num_gts = truths_length(truths)
      
             total = total + num_gts
-    
+
+            # If the confidence of object being in bounding box is greater than threshold count it
             for i in range(len(boxes)):
                 if boxes[i][4] > conf_thresh:
                     proposals = proposals+1
 
+            # Find the box with the highest IOU
             for i in range(num_gts):
                 box_gt = [truths[i][1], truths[i][2], truths[i][3], truths[i][4], 1.0, 1.0, truths[i][0]]
                 best_iou = 0
-                best_j = -1
+                best_j = -1     # Index of the best bounding box
                 for j in range(len(boxes)):
                     iou = bbox_iou(box_gt, boxes[j], x1y1x2y2=False)
                     if iou > best_iou:
                         best_j = j
                         best_iou = iou
-                    # print("Best iou : ", best_iou, iou)
-                # print(best_iou, boxes[best_j][6], box_gt[6])
-                # print(best_iou, boxes[best_j], box_gt, box_gt.__len__())
                 if best_iou > iou_thresh and boxes[best_j][6] == box_gt[6]:
                     correct = correct+1
 
+    # Compute precision, recall and fscore
     precision = 1.0*correct/(proposals+eps)
     recall = 1.0*correct/(total+eps)
     fscore = 2.0*precision*recall/(precision+recall+eps)
@@ -263,7 +283,7 @@ if evaluate:
     logging('evaluating ...')
     test(0)
 else:
-    # max_epochs = 20
+    # Train for max epochs
     for epoch in range(init_epoch, max_epochs):
         train(epoch)
         test(epoch)

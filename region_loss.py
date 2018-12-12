@@ -2,25 +2,28 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 from utils import *
+from FocalLoss import FocalLoss
 
-use_cuda = False
+use_cuda = False        # Added this to make code suitable for both cpu and gpu
 
 def build_targets(pred_boxes, target, anchors, num_anchors, num_classes, nH, nW, noobject_scale, object_scale, sil_thresh, seen):
-    nB = target.size(0)
-    nA = int(num_anchors)                           # Change this to cast to int
-    nC = num_classes
+    """ Build """
+    nB = target.size(0)                             # Number of bounding boxes in ground truth
+    # Change this to cast to int
+    nA = int(num_anchors)                           # number of anchors per bounding box
+    nC = num_classes                                # Number of classes
     anchor_step = len(anchors)//num_anchors         # Changed this to return int
-    conf_mask  = torch.ones(nB, nA, nH, nW) * noobject_scale
+    conf_mask  = torch.ones(nB, nA, nH, nW) * noobject_scale    # confidence mask at differene scales
     coord_mask = torch.zeros(nB, nA, nH, nW)
     cls_mask   = torch.zeros(nB, nA, nH, nW)
-    tx         = torch.zeros(nB, nA, nH, nW) 
-    ty         = torch.zeros(nB, nA, nH, nW) 
-    tw         = torch.zeros(nB, nA, nH, nW) 
-    th         = torch.zeros(nB, nA, nH, nW) 
-    tconf      = torch.zeros(nB, nA, nH, nW)
-    tcls       = torch.zeros(nB, nA, nH, nW) 
+    tx         = torch.zeros(nB, nA, nH, nW)        # Predicted x
+    ty         = torch.zeros(nB, nA, nH, nW)        # predicted y
+    tw         = torch.zeros(nB, nA, nH, nW)        # Predicted w
+    th         = torch.zeros(nB, nA, nH, nW)        # Predicted h
+    tconf      = torch.zeros(nB, nA, nH, nW)        # Confidence that bounding box contains object
+    tcls       = torch.zeros(nB, nA, nH, nW)        # Class scores for each bounding box
 
-    nAnchors = nA*nH*nW
+    nAnchors = nA*nH*nW     # Total anchors
     nPixels  = nH*nW
     for b in range(nB):
         cur_pred_boxes = pred_boxes[b*nAnchors:(b+1)*nAnchors].t()
@@ -99,13 +102,14 @@ def build_targets(pred_boxes, target, anchors, num_anchors, num_classes, nH, nW,
     return nGT, nCorrect, coord_mask, conf_mask, cls_mask, tx, ty, tw, th, tconf, tcls
 
 class RegionLoss(nn.Module):
+    """ Compute the region loss in a neural network fashion """
     def __init__(self, num_classes=0, anchors=[], num_anchors=1):
         super(RegionLoss, self).__init__()
         self.num_classes = num_classes
         self.anchors = anchors
         self.num_anchors = int(num_anchors)
-        self.anchor_step = int(len(anchors) // num_anchors)
-        # print("Anchor Step type : ", type(self.anchor_step))
+        # Changed to anchor_step to only return int
+        self.anchor_step = int(len(anchors) // num_anchors)     # How are anchors spaced
         self.coord_scale = 1
         self.noobject_scale = 1
         self.object_scale = 5
@@ -222,6 +226,9 @@ class RegionLoss(nn.Module):
         # loss_h = self.coord_scale * nn.MSELoss(size_average=False)(h*coord_mask, th*coord_mask)/2.0
         # loss_conf = nn.MSELoss(size_average=False)(conf*conf_mask, tconf*conf_mask)/2.0
 
+        # cross entropy - classification loss
+        # loss_cls = self.class_scale * nn.CrossEntropyLoss(size_average=False)(cls, tcls)
+
         # Changed that to smooth l1 loss as used by Faster R-CNN and SDD. Is impacted less by outliers
         loss_x = self.coord_scale * nn.SmoothL1Loss(size_average=False)(x*coord_mask, tx*coord_mask)/2.0
         loss_y = self.coord_scale * nn.SmoothL1Loss(size_average=False)(y*coord_mask, ty*coord_mask)/2.0
@@ -229,8 +236,10 @@ class RegionLoss(nn.Module):
         loss_h = self.coord_scale * nn.SmoothL1Loss(size_average=False)(h*coord_mask, th*coord_mask)/2.0
         loss_conf = nn.MSELoss(size_average=False)(conf*conf_mask, tconf*conf_mask)/2.0
 
-        loss_cls = self.class_scale * nn.CrossEntropyLoss(size_average=False)(cls, tcls)
-        loss = loss_x + loss_y + loss_w + loss_h + loss_conf + loss_cls
+        focal_loss = FocalLoss(class_num=20, alpha=1, gamma=0.5)                    # Focal loss for classification
+        loss_cls = self.class_scale * focal_loss(size_average=False)(cls, tcls)    # classification loss
+
+        loss = loss_x + loss_y + loss_w + loss_h + loss_conf + loss_cls                     # Total loss
         t4 = time.time()
         if False:
             print('-----------------------------------')

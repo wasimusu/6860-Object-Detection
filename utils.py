@@ -10,15 +10,17 @@ from torch.autograd import Variable
 import struct # get_image_size
 import imghdr # get_image_size
 
+# Sigmoid activation computation
 def sigmoid(x):
     return 1.0/(math.exp(-x)+1.)
 
+# Softmax computation
 def softmax(x):
     x = torch.exp(x - torch.max(x))
     x = x/x.sum()
     return x
 
-
+# IOU computation
 def bbox_iou(box1, box2, x1y1x2y2=True):
     if x1y1x2y2:
         mx = min(box1[0], box2[0])
@@ -52,6 +54,7 @@ def bbox_iou(box1, box2, x1y1x2y2=True):
     uarea = area1 + area2 - carea
     return carea/uarea
 
+# IOU computation
 def bbox_ious(boxes1, boxes2, x1y1x2y2=True):
     if x1y1x2y2:
         mx = torch.min(boxes1[0], boxes2[0])
@@ -84,6 +87,9 @@ def bbox_ious(boxes1, boxes2, x1y1x2y2=True):
     return carea/uarea
 
 def nms(boxes, nms_thresh):
+    """ Non maxium suppression.
+     If there are multiple bounding box select just one """
+    # Return the boxes if empty
     if len(boxes) == 0:
         return boxes
 
@@ -193,6 +199,7 @@ def get_region_boxes(output, conf_thresh, num_classes, anchors, num_anchors, onl
     return all_boxes
 
 def plot_boxes_cv2(img, boxes, savename=None, class_names=None, color=None):
+    """ Plot boxes. Determine coordinates. Print bounding box and text """
     import cv2
     colors = torch.FloatTensor([[1,0,1],[0,0,1],[0,1,1],[0,1,0],[1,1,0],[1,0,0]]);
     def get_color(c, x, max_val):
@@ -235,6 +242,7 @@ def plot_boxes_cv2(img, boxes, savename=None, class_names=None, color=None):
     return img
 
 def plot_boxes(img, boxes, savename=None, class_names=None):
+    """ Plot boxes. Determine coordinates. Print bounding box and text """
     colors = torch.FloatTensor([[1,0,1],[0,0,1],[0,1,1],[0,1,0],[1,1,0],[1,0,0]]);
     def get_color(c, x, max_val):
         ratio = float(x)/max_val * 5
@@ -273,6 +281,7 @@ def plot_boxes(img, boxes, savename=None, class_names=None):
     return img
 
 def read_truths(lab_path):
+    """ Read ground truths from file : Bounding box and confidence scores """
     if not os.path.exists(lab_path):
         return np.array([])
     if os.path.getsize(lab_path):
@@ -284,6 +293,7 @@ def read_truths(lab_path):
         return np.array([])
 
 def read_truths_args(lab_path, min_box_scale):
+    """ Read ground truths from file : Bounding box and confidence scores. And filter out """
     truths = read_truths(lab_path)
     new_truths = []
     for i in range(truths.shape[0]):
@@ -293,6 +303,7 @@ def read_truths_args(lab_path, min_box_scale):
     return np.array(new_truths)
 
 def load_class_names(namesfile):
+    """ Just read class names from file """
     class_names = []
     with open(namesfile, 'r') as fp:
         lines = fp.readlines()
